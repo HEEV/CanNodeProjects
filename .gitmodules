@@ -1,3 +1,7 @@
+[submodule "CanNode"]
+    path   = CanNode
+    url    = https://github.com/HEEV/CanNode.git
+    branch = CanNodeLib
 [submodule "CanNodeI2C"]
 	path = spi-i2c-project/CanNode
 	url = https://github.com/HEEV/CanNode.git
