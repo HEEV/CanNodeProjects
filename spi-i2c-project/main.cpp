@@ -54,7 +54,7 @@
 #include <cstring>
 #include <utility>
 #include "usbd_cdc_if.h"
-#include "CanNode/CanNode.h"
+#include <CanNode.h>
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
