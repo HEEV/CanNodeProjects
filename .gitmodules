@@ -1,0 +1,8 @@
+[submodule "CanNodeI2C"]
+	path = spi-i2c-project/CanNode
+	url = https://github.com/HEEV/CanNode.git
+	branch = CanNodeLib
+[submodule "CanNodeThrottle"]
+	path = ThrotleServo/CanNode
+	url = https://github.com/HEEV/CanNode.git
+	branch = CanNodeLib
