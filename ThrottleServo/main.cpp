@@ -8,8 +8,7 @@
  * \date 6-8-16
  */
 
-#include "CanNode/CanNode.h"
-#include "CanNode/can.h"
+#include <CanNode.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>

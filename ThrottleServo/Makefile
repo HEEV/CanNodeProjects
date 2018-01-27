@@ -1,5 +1,5 @@
 # Put your STM32F4 library code directory here
-CAN_DIR=CanNode
+CAN_DIR=../CanNode
 SRC_DIR=Src
 INC_DIR=Inc
 LIB_DIR=lib
@@ -44,6 +44,7 @@ CFLAGS = --std=gnu11  $(FLAGS)
 CPPFLAGS = --std=gnu++11 $(FLAGS)
 
 # Include files from STM libraries
+INCLUDE += -I$(CAN_DIR)
 INCLUDE += -I$(INC_DIR)
 INCLUDE += -I$(CMSIS_CORE)
 INCLUDE += -I$(CMSIS_STM32)/Include
