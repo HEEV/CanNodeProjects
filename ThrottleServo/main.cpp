@@ -16,13 +16,13 @@
 #include <stm32f0xx_hal_conf.h>
 #include <string.h>
 
-#include "usb_device.h"
-#include "usbd_cdc_if.h"
+//#include "usb_device.h"
+//#include "usbd_cdc_if.h"
 
 #define IO1_ADC ADC_CHANNEL_8
 #define IO2_ADC ADC_CHANNEL_7
 
-/* Private function prototypes -----------------------------------------------*/
+ /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 void MX_GPIO_Init(void);
 void MX_ADC_Init(void);
@@ -33,222 +33,265 @@ void throttleRTR(CanMessage *data);
 void newThrottlePos(CanMessage *data);
 
 uint16_t throttleToServo(uint16_t throttlePos);
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef* htim);
 
 /// Struct for initilizing ADC
 ADC_HandleTypeDef hadc;
 
 TIM_HandleTypeDef htim3;
 /// Struct for recieving throttle values
+
 CanNode *throttle;
+
 
 /// global flag (set in \ref Src/usb_cdc_if.c) for whether USB is connected
 volatile uint8_t USBConnected;
 uint16_t pitotVoltage;
 
 int main(void) {
-  USBConnected = false;
+	//initialize the can object
+	CanNode throttleNode(THROTTLE, throttleRTR);
+	throttle = &throttleNode;
 
-  // Reset of all peripherals, Initializes the Flash interface and the Systick.
-  HAL_Init();
-  // Configure the system clock
-  SystemClock_Config();
-  MX_USB_DEVICE_Init();
-  // Initialize all configured peripherals
-  MX_GPIO_Init();
-  MX_ADC_Init();
-  MX_TIM3_Init();
 
-  HAL_Delay(50);
+	USBConnected = false;
 
-  // setup CAN, ID's, and gives each an RTR callback
-  throttle = CanNode_init(THROT_BODY, throttleRTR);
-  // get new throttle position information from the THROTTLE device
-  CanNode_addFilter(throttle, THROTTLE, newThrottlePos);
+	// Reset of all peripherals, Initializes the Flash interface and the Systick.
+	HAL_Init();
+	// Configure the system clock
+	SystemClock_Config();
+	//MX_USB_DEVICE_Init();
+	// Initialize all configured peripherals
+	MX_GPIO_Init();
+	MX_ADC_Init();
+	MX_TIM3_Init();
 
-  while (1) {
-    // check if there is a message necessary for CanNode functionality
-    // CanNode_checkForMessages();
+	HAL_Delay(50);
 
-    // read the ADC on IO1
-    HAL_ADC_Start(&hadc);
-    HAL_ADC_PollForConversion(&hadc, 5);
+	// setup CAN, ID's, and gives each an RTR callback
 
-    uint16_t adcVal = HAL_ADC_GetValue(&hadc);
+   // throttle = CanNode_init(THROT_BODY, throttleRTR);
 
-    uint16_t newServoPos = throttleToServo(adcVal);
+	// get new throttle position information from the THROTTLE device
+	
+	//bool FILTER_ADDED; use if filter added flag is wanted
+    throttle->addFilter(THROTTLE,throttleRTR);
+	while (1) {
+		// check if there is a message necessary for CanNode functionality
+		// CanNode_checkForMessages();
 
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, newServoPos);
+		// read the ADC on IO1
+		HAL_ADC_Start(&hadc);
+		HAL_ADC_PollForConversion(&hadc, 5);
 
-    // get the current time
-    uint32_t time = HAL_GetTick();
+		uint16_t adcVal = HAL_ADC_GetValue(&hadc);
 
-    if (time % 500 == 0) {
-      char buff[50];
-      HAL_GPIO_TogglePin(GPIOB, LED1_Pin);
+		uint16_t newServoPos = throttleToServo(adcVal);
 
-      if (USBConnected) {
-        itoa(adcVal, buff, 10);
-        strcat(buff, ", ");
-        CDC_Transmit_FS((uint8_t *)buff, strlen(buff));
+		__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, newServoPos);
 
-        itoa(newServoPos, buff, 10);
-        // send a break between data sets
-        strcat(buff, "\n\r");
+		// get the current time
+		uint32_t time = HAL_GetTick();
 
-        CDC_Transmit_FS((uint8_t *)buff, strlen(buff));
-      }
-    }
+		if (time % 500 == 0) {
+			char buff[50];
+			HAL_GPIO_TogglePin(GPIOB, LED1_Pin);
 
-    // every 30 seconds reset the CAN hardware I don't know why this is
-    // necessary
-    if (time % 33333 == 0) {
-      can_init();
-      can_set_bitrate(CAN_BITRATE_500K);
-      can_enable();
-    }
-    HAL_Delay(1);
-  }
+			/*
+			if (USBConnected) {
+				itoa(adcVal, buff, 10);
+				strcat(buff, ", ");
+				CDC_Transmit_FS((uint8_t *)buff, strlen(buff));
+
+				itoa(newServoPos, buff, 10);
+				// send a break between data sets
+				strcat(buff, "\n\r");
+
+				CDC_Transmit_FS((uint8_t *)buff, strlen(buff));
+			}
+			*/
+		}
+
+		// every 30 seconds reset the CAN hardware I don't know why this is
+		// necessary
+		if (time % 33333 == 0) {
+			can_init();
+			can_set_bitrate(CAN_BITRATE_500K);
+			can_enable();
+		}
+		HAL_Delay(1);
+	}
 }
 
 /// RTR handler for the throttle id
 void throttleRTR(CanMessage *data) {
-  // send the current throttle value
-  uint32_t pos = __HAL_TIM_GET_COMPARE(&htim3, TIM_CHANNEL_2);
-  CanNode_sendData_uint32(throttle, pos);
+	// send the current throttle value
+	uint32_t pos = __HAL_TIM_GET_COMPARE(&htim3, TIM_CHANNEL_2);
+	throttle->sendData_uint32(pos);
+
 }
 
 void newThrottlePos(CanMessage *data) {
-  uint16_t throttlePos;
-  CanNode_getData_uint16(data, &throttlePos);
+	uint16_t throttlePos;
+	throttle->getData_uint16(data, &throttlePos);
 
-  uint16_t newServoPos = throttleToServo(throttlePos);
+	uint16_t newServoPos = throttleToServo(throttlePos);
 
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, newServoPos);
+	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, newServoPos);
 
-  // toggle red led on message
-  HAL_GPIO_TogglePin(GPIOB, LED2_Pin);
+	// toggle red led on message
+	HAL_GPIO_TogglePin(GPIOB, LED2_Pin);
 }
 
 uint16_t throttleToServo(uint16_t throttlePos) {
-  uint32_t servoTime;
+	uint32_t servoTime;
 
-  const uint16_t servoMax = 1000;
-  const uint16_t servoMin = 1950;
-  const uint16_t throttleMax = 3360;
-  const uint16_t throttleMin = 642;
+	const uint16_t servoMax = 1000;
+	const uint16_t servoMin = 1950;
+	const uint16_t throttleMax = 3360;
+	const uint16_t throttleMin = 642;
 
-  // change the maximum value of throttlePos to the maximum servo time
-  servoTime = ((servoMax - servoMin) * (throttlePos - throttleMin)) /
-                  (throttleMax - throttleMin) +
-              servoMin;
+	// change the maximum value of throttlePos to the maximum servo time
+	servoTime = ((servoMax - servoMin) * (throttlePos - throttleMin)) /
+		(throttleMax - throttleMin) +
+		servoMin;
 
-  return (uint16_t)servoTime;
+	return (uint16_t)servoTime;
+}
+
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef* htim)
+{
+
+  GPIO_InitTypeDef GPIO_InitStruct;
+  if(htim->Instance==TIM3)
+  {
+  /* USER CODE BEGIN TIM3_MspPostInit 0 */
+
+  /* USER CODE END TIM3_MspPostInit 0 */
+
+    /**TIM3 GPIO Configuration
+    PA7     ------> TIM3_CH2
+    */
+    GPIO_InitStruct.Pin = IO2_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    GPIO_InitStruct.Alternate = GPIO_AF1_TIM3;
+    HAL_GPIO_Init(IO2_GPIO_Port, &GPIO_InitStruct);
+
+  /* USER CODE BEGIN TIM3_MspPostInit 1 */
+
+    HAL_TIM_PWM_Start(htim,TIM_CHANNEL_2);
+
+  /* USER CODE END TIM3_MspPostInit 1 */
+  }
+
 }
 
 /** System Clock Configuration
 */
 void SystemClock_Config(void) {
 
-  RCC_OscInitTypeDef RCC_OscInitStruct;
-  RCC_ClkInitTypeDef RCC_ClkInitStruct;
-  RCC_PeriphCLKInitTypeDef PeriphClkInit;
+	RCC_OscInitTypeDef RCC_OscInitStruct;
+	RCC_ClkInitTypeDef RCC_ClkInitStruct;
+	RCC_PeriphCLKInitTypeDef PeriphClkInit;
 
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI14 |
-                                     RCC_OSCILLATORTYPE_HSI48 |
-                                     RCC_OSCILLATORTYPE_LSI;
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI14 |
+		RCC_OSCILLATORTYPE_HSI48 |
+		RCC_OSCILLATORTYPE_LSI;
 
-  RCC_OscInitStruct.HSI48State = RCC_HSI48_ON;
-  RCC_OscInitStruct.HSI14State = RCC_HSI14_ON;
-  RCC_OscInitStruct.HSI14CalibrationValue = 16;
-  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI48;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL2;
-  RCC_OscInitStruct.PLL.PREDIV = RCC_PREDIV_DIV6;
-  HAL_RCC_OscConfig(&RCC_OscInitStruct);
+	RCC_OscInitStruct.HSI48State = RCC_HSI48_ON;
+	RCC_OscInitStruct.HSI14State = RCC_HSI14_ON;
+	RCC_OscInitStruct.HSI14CalibrationValue = 16;
+	RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI48;
+	RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL2;
+	RCC_OscInitStruct.PLL.PREDIV = RCC_PREDIV_DIV6;
+	HAL_RCC_OscConfig(&RCC_OscInitStruct);
 
-  RCC_ClkInitStruct.ClockType =
-      RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1;
+	RCC_ClkInitStruct.ClockType =
+		RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1;
 
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
-  HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0);
+	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+	HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0);
 
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB | RCC_PERIPHCLK_RTC;
-  PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
-  PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_HSI48;
-  HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit);
+	PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB | RCC_PERIPHCLK_RTC;
+	PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+	PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_HSI48;
+	HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit);
 
-  HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq() / 1000);
+	HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq() / 1000);
 
-  HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
+	HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
 
-  /* SysTick_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
+	/* SysTick_IRQn interrupt configuration */
+	HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 }
 
 /* ADC init function */
 void MX_ADC_Init(void) {
-  ADC_ChannelConfTypeDef sConfig;
+	ADC_ChannelConfTypeDef sConfig;
 
-  /**Configure the global features of the ADC (Clock, Resolution, Data Alignment
-   * and number of conversion)
-  */
-  hadc.Instance = ADC1;
-  hadc.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
-  hadc.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
-  hadc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
-  hadc.Init.LowPowerAutoWait = DISABLE;
-  hadc.Init.LowPowerAutoPowerOff = DISABLE;
-  hadc.Init.ContinuousConvMode = DISABLE;
-  hadc.Init.DiscontinuousConvMode = ENABLE;
-  hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc.Init.DMAContinuousRequests = DISABLE;
-  hadc.Init.Overrun = ADC_OVR_DATA_PRESERVED;
-  HAL_ADC_Init(&hadc);
+	/**Configure the global features of the ADC (Clock, Resolution, Data Alignment
+	 * and number of conversion)
+	*/
+	hadc.Instance = ADC1;
+	hadc.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
+	hadc.Init.Resolution = ADC_RESOLUTION_12B;
+	hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+	hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
+	hadc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+	hadc.Init.LowPowerAutoWait = DISABLE;
+	hadc.Init.LowPowerAutoPowerOff = DISABLE;
+	hadc.Init.ContinuousConvMode = DISABLE;
+	hadc.Init.DiscontinuousConvMode = ENABLE;
+	hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+	hadc.Init.DMAContinuousRequests = DISABLE;
+	hadc.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+	HAL_ADC_Init(&hadc);
 
-  /**Configure for the selected ADC regular channel to be converted.
-  */
-  sConfig.Channel = IO1_ADC;
-  sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
-  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
-  HAL_ADC_ConfigChannel(&hadc, &sConfig);
+	/**Configure for the selected ADC regular channel to be converted.
+	*/
+	sConfig.Channel = IO1_ADC;
+	sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
+	sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+	HAL_ADC_ConfigChannel(&hadc, &sConfig);
 }
 
 /* TIM3 init function */
 void MX_TIM3_Init(void) {
 
-  TIM_ClockConfigTypeDef sClockSourceConfig;
-  TIM_MasterConfigTypeDef sMasterConfig;
-  TIM_OC_InitTypeDef sConfigOC;
+	TIM_ClockConfigTypeDef sClockSourceConfig;
+	TIM_MasterConfigTypeDef sMasterConfig;
+	TIM_OC_InitTypeDef sConfigOC;
 
-  htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 16; // divide system clock (16Mhz) by 16
-  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period =
-      20000; // set frequency to 50hz (divide prescalaed clock by 20000)
-  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  HAL_TIM_Base_Init(&htim3);
+	htim3.Instance = TIM3;
+	htim3.Init.Prescaler = 16; // divide system clock (16Mhz) by 16
+	htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+	htim3.Init.Period =
+		20000; // set frequency to 50hz (divide prescalaed clock by 20000)
+	htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	HAL_TIM_Base_Init(&htim3);
 
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig);
+	sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+	HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig);
 
-  HAL_TIM_PWM_Init(&htim3);
+	HAL_TIM_PWM_Init(&htim3);
 
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig);
+	sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+	sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+	HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig);
 
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2);
+	sConfigOC.OCMode = TIM_OCMODE_PWM1;
+	sConfigOC.Pulse = 0;
+	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+	HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_2);
 
-  HAL_TIM_MspPostInit(&htim3);
+	HAL_TIM_MspPostInit(&htim3);
 }
 
 /** Configure pins as
@@ -263,69 +306,69 @@ through
 */
 void MX_GPIO_Init(void) {
 
-  GPIO_InitTypeDef GPIO_InitStruct;
+	GPIO_InitTypeDef GPIO_InitStruct;
 
-  // Make all unused pins analog to save power
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOF_CLK_ENABLE();
+	// Make all unused pins analog to save power
+	/* GPIO Ports Clock Enable */
+	__HAL_RCC_GPIOC_CLK_ENABLE();
+	__HAL_RCC_GPIOF_CLK_ENABLE();
 
-  /*Configure GPIO pins : PC13 PC14 PC15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15;
-  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+	/*Configure GPIO pins : PC13 PC14 PC15 */
+	GPIO_InitStruct.Pin = GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15;
+	GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PF0 PF1 PF11 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_11;
-  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+	/*Configure GPIO pins : PF0 PF1 PF11 */
+	GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_11;
+	GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PA0 PA1 PA2 PA3
-                     PA4 PA5 PA6 PA8
-                     PA9 PA10 PA15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 |
-                        GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_8 |
-                        GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_15;
-  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+	/*Configure GPIO pins : PA0 PA1 PA2 PA3
+					   PA4 PA5 PA6 PA8
+					   PA9 PA10 PA15 */
+	GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 |
+		GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_8 |
+		GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_15;
+	GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB1 PB2 PB10 PB11
-                     PB12 PB13 PB14 PB15
-                     PB5 PB6 PB7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_10 | GPIO_PIN_11 |
-                        GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15 |
-                        GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
-  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+	/*Configure GPIO pins : PB1 PB2 PB10 PB11
+					   PB12 PB13 PB14 PB15
+					   PB5 PB6 PB7 */
+	GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_10 | GPIO_PIN_11 |
+		GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15 |
+		GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
+	GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  __HAL_RCC_GPIOC_CLK_DISABLE();
-  __HAL_RCC_GPIOF_CLK_DISABLE();
+	__HAL_RCC_GPIOC_CLK_DISABLE();
+	__HAL_RCC_GPIOF_CLK_DISABLE();
 
-  // Enable used io pins
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
+	// Enable used io pins
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+	__HAL_RCC_GPIOB_CLK_ENABLE();
 
-  /*Configure GPIO pins : LED2_Pin LED1_Pin */
-  GPIO_InitStruct.Pin = LED2_Pin | LED1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+	/*Configure GPIO pins : LED2_Pin LED1_Pin */
+	GPIO_InitStruct.Pin = LED2_Pin | LED1_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, LED2_Pin | LED1_Pin, GPIO_PIN_SET);
+	/*Configure GPIO pin Output Level */
+	HAL_GPIO_WritePin(GPIOB, LED2_Pin | LED1_Pin, GPIO_PIN_SET);
 
-  // configure IO1 as a rising edge interrupt pin
-  // GPIO_InitStruct.Pin = IO2_Pin;
-  // GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  // GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  // HAL_GPIO_Init(IO2_GPIO_Port, &GPIO_InitStruct);
+	// configure IO1 as a rising edge interrupt pin
+	// GPIO_InitStruct.Pin = IO2_Pin;
+	// GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+	// GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+	// HAL_GPIO_Init(IO2_GPIO_Port, &GPIO_InitStruct);
 
-  /* EXTI4_15_IRQn interrupt configuration */
-  // HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
-  // HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+	/* EXTI4_15_IRQn interrupt configuration */
+	// HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
+	// HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 }
