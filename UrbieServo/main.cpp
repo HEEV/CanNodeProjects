@@ -37,7 +37,7 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef* htim);
 
 /// Struct for initilizing ADC
 ADC_HandleTypeDef hadc;
-
+CAN_HandleTypeDef hcan;
 TIM_HandleTypeDef htim3;
 /// Struct for recieving throttle values
 
@@ -47,14 +47,14 @@ CanNode *throttle;
 /// global flag (set in \ref Src/usb_cdc_if.c) for whether USB is connected
 volatile uint8_t USBConnected;
 uint16_t pitotVoltage;
+//boolean flag, set if a can message for the throttle is recieved, will disable
+//ADC based throttle
+volatile bool canThrottleMessage;
 
 int main(void) {
-	//initialize the can object
-	CanNode throttleNode(THROTTLE, throttleRTR);
-	throttle = &throttleNode;
-
 
 	USBConnected = false;
+    canThrottleMessage = false;
 
 	// Reset of all peripherals, Initializes the Flash interface and the Systick.
 	HAL_Init();
@@ -66,29 +66,35 @@ int main(void) {
 	MX_ADC_Init();
 	MX_TIM3_Init();
 
-	HAL_Delay(50);
+	//HAL_Delay(50);
 
 	// setup CAN, ID's, and gives each an RTR callback
 
    // throttle = CanNode_init(THROT_BODY, throttleRTR);
 
-	// get new throttle position information from the THROTTLE device
+	//initialize the can object
+	CanNode throttleNode(THROTTLE, throttleRTR);
+	throttle = &throttleNode;
+
 	
+	// get new throttle position information from the THROTTLE device
 	//bool FILTER_ADDED; use if filter added flag is wanted
     throttle->addFilter(THROTTLE,throttleRTR);
 	while (1) {
 		// check if there is a message necessary for CanNode functionality
-		// CanNode_checkForMessages();
+        CanNode::checkForMessages();
 
-		// read the ADC on IO1
-		HAL_ADC_Start(&hadc);
-		HAL_ADC_PollForConversion(&hadc, 5);
 
-		uint16_t adcVal = HAL_ADC_GetValue(&hadc);
+        //if there has not been a CAN Message use the ADC based throttle messages
+        if(canThrottleMessage == false) {
+            // read the ADC on IO1
+            HAL_ADC_Start(&hadc);
+            HAL_ADC_PollForConversion(&hadc, 5);
 
-		uint16_t newServoPos = throttleToServo(adcVal);
-
-		__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, newServoPos);
+            uint16_t adcVal = HAL_ADC_GetValue(&hadc);
+            uint16_t newServoPos = throttleToServo(adcVal);
+            __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, newServoPos);
+        }
 
 		// get the current time
 		uint32_t time = HAL_GetTick();
@@ -115,9 +121,9 @@ int main(void) {
 		// every 30 seconds reset the CAN hardware I don't know why this is
 		// necessary
 		if (time % 33333 == 0) {
-			can_init();
-			can_set_bitrate(CAN_BITRATE_500K);
-			can_enable();
+		//	can_init();
+		//	can_set_bitrate(CAN_BITRATE_500K);
+		//	can_enable();
 		}
 		HAL_Delay(1);
 	}
@@ -141,6 +147,7 @@ void newThrottlePos(CanMessage *data) {
 
 	// toggle red led on message
 	HAL_GPIO_TogglePin(GPIOB, LED2_Pin);
+    canThrottleMessage = true;
 }
 
 uint16_t throttleToServo(uint16_t throttlePos) {

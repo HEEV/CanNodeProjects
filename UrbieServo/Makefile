@@ -17,9 +17,9 @@ TARGET=stm32f0xx
 USR_SRC := $(SRC_DIR)/*.c
 CAN_SRC := $(CAN_DIR)/*.cpp
 STM_SRC := $(STM_LIB_SRC)/Src/$(TARGET)*.c
-#STM_SRC += $(CMSIS_STM32)/Source/Templates/system_$(TARGET).c
-#STM_SRC += $(STM_USB_CORE)/Src/*.c
-#STM_SRC += $(STM_USB_CDC)/Src/*.c
+STM_SRC += $(CMSIS_STM32)/Source/Templates/system_$(TARGET).c
+STM_SRC += $(STM_USB_CORE)/Src/*.c
+STM_SRC += $(STM_USB_CDC)/Src/*.c
 STARTUP := startup_stm32f042x6.s
 
 # Binaries will be generated with this name (.elf, .bin, .hex, etc)
