@@ -1,8 +1,0 @@
-[default]
-name=Default
-device=local
-runtime=host
-config-opts=
-prefix=/home/nebk/.cache/gnome-builder/install/CanNode-v0.3/host
-app-id=
-default=true
