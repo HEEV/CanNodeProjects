@@ -61,9 +61,13 @@
 ADC_HandleTypeDef hadc;
 CAN_HandleTypeDef hcan;
 
-#define V_DIV_12V(adc) ( (adc * 12375)/3328 )
+#define V_DIV_12V(adc) ( (adc * 12400)/3328 )
 #define V_DIV_24V(adc) ( )
 #define V_DIV_48V(adc) ( )
+
+#define I_SEN_12A(adc) ( (adc * 103125)/7168 - 44196 )
+#define I_SEN_25A(adc) (  )
+#define I_SEN_6_5A(adc (  )
 
 //Definitions of the voltage and current ADC inputs
 #define I_IN1_ADC 2
@@ -88,8 +92,10 @@ int main(void)
 {
   char buff1[24] = {0};
   char buff2[16] = {0};
-  uint16_t adcVal;
-  uint16_t voltage;
+  int16_t currentVals[10] = {0};
+  uint16_t voltageVals[10] = {0};
+  int valIndex = 0;
+
   /* MCU Configuration----------------------------------------------------------*/
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
@@ -102,39 +108,60 @@ int main(void)
   MX_USB_DEVICE_Init();
 
   HAL_GPIO_TogglePin(GPIOB, LED2_Pin);
-	while (1) {
+  while (1) {
 
-		// get the current time
-		uint32_t time = HAL_GetTick();
+    // get the current time
+    uint32_t time = HAL_GetTick();
 
-		if (time % 500 == 0) {
-			HAL_GPIO_TogglePin(GPIOB, LED1_Pin);
-			HAL_GPIO_TogglePin(GPIOB, LED2_Pin);
-			
-			// read ADC value
+    if (time % 10 == 0 ) {
+
+      uint16_t adcVal;
+
+      // read ADC value
+      // read the current value
       HAL_ADC_Start(&hadc);
       HAL_ADC_PollForConversion(&hadc, 10);
       adcVal = HAL_ADC_GetValue(&hadc);
       
-      int16_t current = (adcVal * 1241 - I_IN1_REF * 500)/I_SEN1;
+      //currentVals[valIndex] = ((adcVal * 3300)/4096 - 2475)*1000/I_SEN1; 
+      currentVals[valIndex] = I_SEN_12A(adcVal);
       
-      
+      // read the voltage value
       HAL_ADC_Start(&hadc);
       HAL_ADC_PollForConversion(&hadc, 10);
       adcVal = HAL_ADC_GetValue(&hadc);
       
-      voltage = V_IN1_CONV(adcVal);
+      voltageVals[valIndex] = V_IN1_CONV(adcVal);
+
+      valIndex++;
+      if(valIndex >= 10){
+          valIndex = 0;
+      }
+    }
+    if (time % 500 == 0) {
+      HAL_GPIO_TogglePin(GPIOB, LED1_Pin);
+      HAL_GPIO_TogglePin(GPIOB, LED2_Pin);
+        
+      //average values
+      uint32_t aveVoltage = 0;
+      int16_t aveCurrent = 0;
+      for(int i = 0; i<10; i++){
+        aveVoltage += voltageVals[i];
+        aveCurrent += currentVals[i];
+      }
+      aveVoltage /= 10;
+      aveCurrent /= 10;
       
-      itoa(current, buff1, 10);
-      itoa(voltage, buff2, 10);
+      itoa(aveCurrent, buff1, 10);
+      itoa(aveVoltage, buff2, 10);
       strcat(buff1, ", ");
       strcat(buff1, buff2);
       strcat(buff1, "\n");
       CDC_Transmit_FS((uint8_t*) buff1, 24);
       
-		}
-	  HAL_Delay(1);
-	}
+    }
+    HAL_Delay(1);
+  }
 
 }
 
