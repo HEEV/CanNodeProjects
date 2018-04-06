@@ -70,16 +70,16 @@ int main(void) {
 
 	// setup CAN, ID's, and gives each an RTR callback
 
-   // throttle = CanNode_init(THROT_BODY, throttleRTR);
+    //throttle = CanNode_init(THROT_BODY, throttleRTR);
 
 	//initialize the can object
-	CanNode throttleNode(THROTTLE, throttleRTR);
+	CanNode throttleNode(THROT_BODY, throttleRTR);
 	throttle = &throttleNode;
 
 	
 	// get new throttle position information from the THROTTLE device
 	//bool FILTER_ADDED; use if filter added flag is wanted
-    throttle->addFilter(THROTTLE,throttleRTR);
+    throttle->addFilter(THROTTLE, newThrottlePos);
 	while (1) {
 		// check if there is a message necessary for CanNode functionality
         CanNode::checkForMessages();
