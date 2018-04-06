@@ -4,64 +4,66 @@
 #include <ostream>
 
 using namespace std;
-extern int CSV[3000] = { 1, 3, 2,1 };
 int main() {
 
-
-
-
 	string temp;
+    int index=0;
+
 	//open the csv 
 	//TODO verify openign correctly
 	ofstream out("CSVAdjusted.h");
 	ifstream in("CSVAdjusted.csv");
-	int index=0;
-	int firstNumber;
-	int secondNumber;
-	int commaPosition;
 	if (out.is_open() && in.is_open()) {
+        int firstNumber = 0;
+        string secondNumber;
+        int commaPosition;
 
 		//write the .h heading
-		out << "int CSV[] = { ";
-
-
-		out << 0;
-
-
-
-		while (!in.eof() && index <= 4094) {
+		out << "int CSV[] = { " << endl;
+		while (!in.eof() ) {
+            //get the next line
 			getline(in, temp);
-			commaPosition = temp.find(',');
-			firstNumber = stoi(temp.substr(0, commaPosition));
-			secondNumber = stoi(temp.substr(commaPosition + 1, 100));
 
-			if (firstNumber == index) {
-				out << ", " << secondNumber;
-				getline(in, temp);
-			}
-			else {
-				out << ", " << secondNumber;
-			}
-			
+            //find the x value
+			commaPosition = temp.find(',');
+            //check for end
+            if(commaPosition == -1) {
+                break;
+            }
+			firstNumber = stoi(temp.substr(0, commaPosition));
+
+            // check if some values need filled in
+            if(firstNumber > index){
+                //output the value found
+                //if the x value is not equal to the index use the prevous
+                //y value to fill in the index until we reach x
+                while(index < firstNumber){
+                    out  << secondNumber << ", ";
+                    if(index % 10 == 0){
+                        out << endl;
+                    }
+                    index++;
+                }
+            }
+
+            //output the y value for the x value found
+            //secondNumber = stoi(temp.substr(commaPosition + 1, 100));
+            secondNumber = temp.substr(commaPosition + 1, temp.length()); 
+            out  << secondNumber << ", ";
+            //end line
+            if(index % 10 == 0){
+                out << endl;
+            }
+
 			index++;
 		}
 		
 
 	}
 
-	//get the first value of the csv
-	//make sure the csv matches the value of the for loop
-	//print it to the csv
-
-
-
-
-
-
-
 	//terminate the .h and close it
 	out << "}";
-	out << endl << "int size ="<<index <<";";
+	out << endl << "int CSV_size ="<<index <<";";
 	in.close();
 	out.close();
 

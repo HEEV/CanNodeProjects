@@ -16,8 +16,8 @@
 #include <stm32f0xx_hal_conf.h>
 #include <string.h>
 
-//#include "usb_device.h"
-//#include "usbd_cdc_if.h"
+#include "usb_device.h"
+#include "usbd_cdc_if.h"
 
 #define IO1_ADC ADC_CHANNEL_8
 #define IO2_ADC ADC_CHANNEL_7
@@ -32,6 +32,7 @@ void MX_TIM3_Init(void);
 void throttleRTR(CanMessage *data);
 void newThrottlePos(CanMessage *data);
 
+uint16_t throttleAdjust(uint16_t adcVal);
 uint16_t throttleToServo(uint16_t throttlePos);
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef* htim);
 
@@ -42,7 +43,6 @@ TIM_HandleTypeDef htim3;
 /// Struct for recieving throttle values
 
 CanNode *throttle;
-
 
 /// global flag (set in \ref Src/usb_cdc_if.c) for whether USB is connected
 volatile uint8_t USBConnected;
@@ -55,22 +55,26 @@ int main(void) {
 
 	USBConnected = false;
     canThrottleMessage = false;
+    uint16_t aveAdc = 0;
+    uint16_t adcVals[10] = {0};
+    uint8_t valIndex = 0;
+    uint16_t newServoPos;
 
 	// Reset of all peripherals, Initializes the Flash interface and the Systick.
 	HAL_Init();
 	// Configure the system clock
 	SystemClock_Config();
-	//MX_USB_DEVICE_Init();
 	// Initialize all configured peripherals
 	MX_GPIO_Init();
 	MX_ADC_Init();
 	MX_TIM3_Init();
+	MX_USB_DEVICE_Init();
 
 	//HAL_Delay(50);
 
 	// setup CAN, ID's, and gives each an RTR callback
 
-   // throttle = CanNode_init(THROT_BODY, throttleRTR);
+    //throttle = CanNode_init(THROT_BODY, throttleRTR);
 
 	//initialize the can object
 	CanNode throttleNode(THROTTLE, throttleRTR);
@@ -91,8 +95,21 @@ int main(void) {
             HAL_ADC_Start(&hadc);
             HAL_ADC_PollForConversion(&hadc, 5);
 
-            uint16_t adcVal = HAL_ADC_GetValue(&hadc);
-            uint16_t newServoPos = throttleToServo(adcVal);
+            adcVals[valIndex] = HAL_ADC_GetValue(&hadc);
+            valIndex++;
+            if(valIndex >= 10){
+                valIndex = 0;
+            }
+            
+            //average values
+            uint32_t temp = 0;
+            for(int i = 0; i<10; i++){
+                temp += adcVals[i];
+            }
+
+            aveAdc  = temp / 10;
+
+            newServoPos = throttleToServo(throttleAdjust(aveAdc));
             __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, newServoPos);
         }
 
@@ -100,31 +117,33 @@ int main(void) {
 		uint32_t time = HAL_GetTick();
 
 		if (time % 500 == 0) {
-			char buff[50];
+			char buff1[5];
+            char buff[32];
+            
 			HAL_GPIO_TogglePin(GPIOB, LED1_Pin);
 
-			/*
-			if (USBConnected) {
-				itoa(adcVal, buff, 10);
-				strcat(buff, ", ");
-				CDC_Transmit_FS((uint8_t *)buff, strlen(buff));
+			
+            itoa(aveAdc, buff1, 10);
+            strcpy(buff, buff1);
+            strcat(buff, ", ");
 
-				itoa(newServoPos, buff, 10);
-				// send a break between data sets
-				strcat(buff, "\n\r");
+            itoa(throttleAdjust(aveAdc), buff1, 10);
+            strcat(buff, buff1);
+            strcat(buff, ", ");
 
-				CDC_Transmit_FS((uint8_t *)buff, strlen(buff));
-			}
-			*/
+            itoa(throttleToServo(throttleAdjust(aveAdc)), buff1, 10);
+            strcat(buff, buff1);
+            strcat(buff, "\n");
+
+            //itoa(newServoPos, buff, 10);
+            // send a break between data sets
+            //strcat(buff, "\n");
+
+            CDC_Transmit_FS((uint8_t *)buff, strlen(buff));
 		}
 
 		// every 30 seconds reset the CAN hardware I don't know why this is
 		// necessary
-		if (time % 33333 == 0) {
-		//	can_init();
-		//	can_set_bitrate(CAN_BITRATE_500K);
-		//	can_enable();
-		}
 		HAL_Delay(1);
 	}
 }
@@ -141,7 +160,7 @@ void newThrottlePos(CanMessage *data) {
 	uint16_t throttlePos;
 	throttle->getData_uint16(data, &throttlePos);
 
-	uint16_t newServoPos = throttleToServo(throttlePos);
+	uint16_t newServoPos = throttleToServo(throttleAdjust(throttlePos));
 
 	__HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, newServoPos);
 
@@ -150,19 +169,44 @@ void newThrottlePos(CanMessage *data) {
     canThrottleMessage = true;
 }
 
+//Returns an output between 0 and 4096
+//Splits the throttle into two linear regions
+//whose slopes are adjusted by transX, and transY
+//variables.
+uint16_t throttleAdjust(uint16_t adcVal){
+    const uint16_t MAX_VAL = 4096;
+    const uint16_t transX = 1400;
+    const uint16_t transY = 1000;
+
+    //first slope
+    if(adcVal < transX) {
+        uint32_t temp = adcVal * transY;
+        return (uint16_t) (temp/transX);
+    }
+
+    //second slope
+    uint32_t temp = (adcVal - transX) * (MAX_VAL - transY);
+    temp = (temp/(MAX_VAL - transX));
+    return (uint16_t) temp + transY;
+}
 uint16_t throttleToServo(uint16_t throttlePos) {
 	uint32_t servoTime;
 
 	const uint16_t servoMax = 1000;
-	const uint16_t servoMin = 1950;
-	const uint16_t throttleMax = 3360;
-	const uint16_t throttleMin = 642;
+	//const uint16_t servoMin = 1950;
+	const uint16_t servoMin = 2052;
+	//const uint16_t throttleMax = 3360;
+	const uint16_t throttleMax = 2100;
+	//const uint16_t throttleMin = 634;
+	const uint16_t throttleMin = 425;
 
 	// change the maximum value of throttlePos to the maximum servo time
 	servoTime = ((servoMax - servoMin) * (throttlePos - throttleMin)) /
 		(throttleMax - throttleMin) +
 		servoMin;
 
+    if(servoTime < servoMax) servoTime = servoMax;
+    else if(servoTime > servoMin) servoTime = servoMin;
 	return (uint16_t)servoTime;
 }
 
@@ -379,3 +423,37 @@ void MX_GPIO_Init(void) {
 	// HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
 	// HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 }
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @param  None
+  * @retval None
+  */
+void _Error_Handler(char * file, int line)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+  while(1) 
+  {
+  }
+  /* USER CODE END Error_Handler_Debug */ 
+}
+
+#ifdef USE_FULL_ASSERT
+
+/**
+   * @brief Reports the name of the source file and the source line number
+   * where the assert_param error has occurred.
+   * @param file: pointer to the source file name
+   * @param line: assert_param error line source number
+   * @retval None
+   */
+void assert_failed(uint8_t* file, uint32_t line)
+{
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+    ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
+
+}
+#endif
