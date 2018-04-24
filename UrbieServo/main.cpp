@@ -16,8 +16,12 @@
 #include <stm32f0xx_hal_conf.h>
 #include <string.h>
 
+//#define USBDEBUG
+
+#ifdef USBDEBUG
 #include "usb_device.h"
 #include "usbd_cdc_if.h"
+#endif
 
 #define IO1_ADC ADC_CHANNEL_8
 #define IO2_ADC ADC_CHANNEL_7
@@ -68,7 +72,10 @@ int main(void) {
 	MX_GPIO_Init();
 	MX_ADC_Init();
 	MX_TIM3_Init();
+
+#ifdef USBDEBUG 
 	MX_USB_DEVICE_Init();
+#endif
 
 	//HAL_Delay(50);
 
@@ -116,6 +123,7 @@ int main(void) {
 		// get the current time
 		uint32_t time = HAL_GetTick();
 
+#ifdef USBDEBUG
 		if (time % 500 == 0) {
 			char buff1[5];
             char buff[32];
@@ -141,6 +149,7 @@ int main(void) {
 
             CDC_Transmit_FS((uint8_t *)buff, strlen(buff));
 		}
+#endif
 
 		// every 30 seconds reset the CAN hardware I don't know why this is
 		// necessary
@@ -192,13 +201,13 @@ uint16_t throttleAdjust(uint16_t adcVal){
 uint16_t throttleToServo(uint16_t throttlePos) {
 	uint32_t servoTime;
 
-	const uint16_t servoMax = 1000;
+	const uint16_t servoMax = 1155;
 	//const uint16_t servoMin = 1950;
-	const uint16_t servoMin = 2052;
+	const uint16_t servoMin = 1990;
 	//const uint16_t throttleMax = 3360;
 	const uint16_t throttleMax = 2100;
 	//const uint16_t throttleMin = 634;
-	const uint16_t throttleMin = 425;
+	const uint16_t throttleMin = 458;
 
 	// change the maximum value of throttlePos to the maximum servo time
 	servoTime = ((servoMax - servoMin) * (throttlePos - throttleMin)) /
