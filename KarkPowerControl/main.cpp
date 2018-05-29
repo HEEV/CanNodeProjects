@@ -18,14 +18,12 @@
 
 #include <CanNode.h>
 
-//#define USBDEBUG
-//includes for USB code
+// includes for USB code
 #ifdef USBDEBUG
-#include <usbd_cdc.h>
 #include <usb_device.h>
+#include <usbd_cdc.h>
 #include <usbd_cdc_if.h>
 #endif
-
 
 #define IO1_ADC ADC_CHANNEL_8
 #define IO2_ADC ADC_CHANNEL_7
@@ -41,10 +39,11 @@ void starterHandler(CanMessage *data);
 void stopHandler(CanMessage *data);
 void killHandler(CanMessage *data);
 
-#define LOCKOUT_TIME 1000
-#define STARTER_LOCKOUT -1000
-#define STARTER_MAX_TIME 5000
-#define AUTO_TIME 1500
+#define LOCKOUT_TIME 500
+#define STARTER_LOCKOUT -LOCKOUT_TIME
+#define STARTER_MAX_TIME 2000
+#define AUTO_TIME 1000
+#define MAX_MESSAGE_TIME 175 // maximum time between messages before turning off
 
 volatile int starterTimeout_g;
 volatile bool starterLockout_g;
@@ -71,7 +70,6 @@ int main(void) {
   starterAutoStop_g = 0;
   prevMessageTime_g = 0;
 
-
   // Reset of all peripherals, Initializes the Flash interface and the Systick.
   HAL_Init();
   // Configure the system clock
@@ -85,18 +83,18 @@ int main(void) {
   MX_GPIO_Init();
 
   // setup CAN, ID's, and gives each an RTR callback
-  
+
   // setup node for handling power control functions
   CanNode power_control(POWER_CTL, pwrCtlRTR);
   powerCtlNode = &power_control;
 
   bool filterRet;
-  //setup handler functions
+  // setup handler functions
   filterRet = powerCtlNode->addFilter(START_SWITCH, starterHandler);
   filterRet = powerCtlNode->addFilter(STOP_SWITCH, stopHandler);
   powerCtlNode->addFilter(KILL_SWITCH, stopHandler);
 
-  //blink the lights to show it's on
+  // blink the lights to show it's on
   HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED2_Pin, GPIO_PIN_SET);
   HAL_Delay(200);
   HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED2_Pin, GPIO_PIN_RESET);
@@ -112,28 +110,38 @@ int main(void) {
 
     // check if there is a message necessary for CanNode functionality
     CanMessage msg;
-    //if(is_can_msg_pending()) {
+    // if(is_can_msg_pending()) {
     //    can_rx(&msg, 5);
     //}
     CanNode::checkForMessages();
 
     starterTimeout_g -= time - prevLoopTime;
-    if(starterTimeout_g < 0 && starterTimeout_g > -50){
-        // Turn off Starter
-        HAL_GPIO_WritePin(IO1_GPIO_Port, IO1_Pin, GPIO_PIN_RESET);
-        // Lockout turning it on again for a while
-        starterLockout_g = true;
-        //clear starter LED
-        HAL_GPIO_WritePin(GPIOB, LED2_Pin, GPIO_PIN_RESET);
-    }
-    else if(starterTimeout_g < STARTER_LOCKOUT /*||
-            time - prevMessageTime_g >= LOCKOUT_TIME*/){
+    if (starterTimeout_g < STARTER_LOCKOUT ||
+        (time - prevMessageTime_g >= LOCKOUT_TIME && starterLockout_g)) {
 
-        starterTimeout_g = STARTER_LOCKOUT;
-        starterLockout_g = false;
+      starterTimeout_g = STARTER_LOCKOUT;
+      starterLockout_g = false;
+    }
+    else if ((time - prevMessageTime_g >= MAX_MESSAGE_TIME && !starterLockout_g) ||
+        (starterTimeout_g < 0 && starterTimeout_g > -50)) {
+
+      if (starterTimeout_g - AUTO_TIME < 0) {
+
+          // Turn off Starter
+          HAL_GPIO_WritePin(IO1_GPIO_Port, IO1_Pin, GPIO_PIN_RESET);
+
+          // start lockout phase
+          if (starterTimeout_g > 0) {
+            starterTimeout_g = 0;
+          }
+          // Lockout turning it on again for a while
+          starterLockout_g = true;
+          // clear starter LED
+          HAL_GPIO_WritePin(GPIOB, LED2_Pin, GPIO_PIN_RESET);
+        }
     }
 
-//USB Debugging
+// USB Debugging
 #ifdef USBDEBUG
     // USB handling code (send data out USB port)
     if (USBConnected && time % 499 == 0) {
@@ -159,57 +167,58 @@ int main(void) {
       strcat(buff, "\n");
 
       CDC_Transmit_FS((uint8_t *)buff, strlen(buff));
-      
     }
 #endif
 
-    if (time % 30000 == 0){
-        //reset can every 30 seconds
-        //can_init();
-        //can_set_bitrate(CAN_BITRATE_500K);
-        //can_enable();
-
+    if (time % 30000 == 0) {
+      // reset can every 30 seconds
+      // can_init();
+      // can_set_bitrate(CAN_BITRATE_500K);
+      // can_enable();
     }
 
-    //make sure that the same code does not run twice
+    // make sure that the same code does not run twice
     HAL_Delay(1);
   }
 }
 
-void pwrCtlRTR(CanMessage *data){
-}
+void pwrCtlRTR(CanMessage *data) {}
 
-void starterHandler(CanMessage *data){
-    if(!starterLockout_g) {
-        // Turn on the starter motor for a certain ammount of time
-        HAL_GPIO_WritePin(IO1_GPIO_Port, IO1_Pin, GPIO_PIN_SET);
+void starterHandler(CanMessage *data) {
+  if (starterTimeout_g < 0 && !starterLockout_g) {
+    // Turn on the starter motor for a certain ammount of time
+    HAL_GPIO_WritePin(IO1_GPIO_Port, IO1_Pin, GPIO_PIN_SET);
 
-        // Turn on the EFI controller
-        HAL_GPIO_WritePin(IO2_GPIO_Port, IO2_Pin, GPIO_PIN_SET);
+    // Turn on the EFI controller
+    HAL_GPIO_WritePin(IO2_GPIO_Port, IO2_Pin, GPIO_PIN_SET);
 
-        starterTimeout_g = STARTER_MAX_TIME;
-        //turn on both leds
-        HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED2_Pin, GPIO_PIN_SET);
-    }
+    starterTimeout_g = STARTER_MAX_TIME;
+
+    // turn on both leds
+    HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED2_Pin, GPIO_PIN_SET);
+  }
+  if (!starterLockout_g) {
     prevMessageTime_g = HAL_GetTick();
+  }
 }
 
-void stopHandler(CanMessage *data){
-    // Turn off the EFI controller
-    HAL_GPIO_WritePin(IO2_GPIO_Port, IO2_Pin, GPIO_PIN_RESET);
+void stopHandler(CanMessage *data) {
+  // Turn off the EFI controller
+  HAL_GPIO_WritePin(IO2_GPIO_Port, IO2_Pin, GPIO_PIN_RESET);
 
-    // Make sure that the starter motor is off
-    HAL_GPIO_WritePin(IO1_GPIO_Port, IO1_Pin, GPIO_PIN_RESET);
+  // Make sure that the starter motor is off
+  HAL_GPIO_WritePin(IO1_GPIO_Port, IO1_Pin, GPIO_PIN_RESET);
 
-    starterLockout_g = false;
+  starterLockout_g = false;
 
-    //Reset Both Leds
-    HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED2_Pin, GPIO_PIN_RESET);
+  // Reset Both Leds
+  HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED2_Pin, GPIO_PIN_RESET);
 }
 
-// ----------------------- Automatically generated code -----------------------------------------
+// ----------------------- Automatically generated code
+// -----------------------------------------
 /** System Clock Configuration
-*/
+ */
 void SystemClock_Config(void) {
 
   RCC_OscInitTypeDef RCC_OscInitStruct;
@@ -257,7 +266,7 @@ void MX_ADC_Init(void) {
 
   /**Configure the global features of the ADC (Clock, Resolution, Data Alignment
    * and number of conversion)
-  */
+   */
   hadc.Instance = ADC1;
   hadc.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
   hadc.Init.Resolution = ADC_RESOLUTION_12B;
@@ -274,7 +283,7 @@ void MX_ADC_Init(void) {
   HAL_ADC_Init(&hadc);
 
   /**Configure for the selected ADC regular channel to be converted.
-  */
+   */
   sConfig.Channel = IO1_ADC;
   sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
   sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
@@ -357,7 +366,7 @@ void MX_GPIO_Init(void) {
   // GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   // GPIO_InitStruct.Pull = GPIO_PULLUP;
 
-  //Starter motor control on IO2
+  // Starter motor control on IO2
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -365,7 +374,7 @@ void MX_GPIO_Init(void) {
   GPIO_InitStruct.Pin = IO2_Pin;
   HAL_GPIO_Init(IO2_GPIO_Port, &GPIO_InitStruct);
 
-  //EFI control on IO1
+  // EFI control on IO1
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -374,8 +383,7 @@ void MX_GPIO_Init(void) {
   HAL_GPIO_Init(IO1_GPIO_Port, &GPIO_InitStruct);
 }
 
-void _Error_Handler(char*, int){
+void _Error_Handler(char *, int) {
 
-    HAL_GPIO_WritePin(GPIOB, LED2_Pin | LED1_Pin, GPIO_PIN_RESET);
-
+  HAL_GPIO_WritePin(GPIOB, LED2_Pin | LED1_Pin, GPIO_PIN_RESET);
 }
