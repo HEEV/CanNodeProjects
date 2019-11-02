@@ -76,6 +76,12 @@ int main(void) {
   const int NUM_SAMPLES = 50;
   uint16_t pitotVoltages[NUM_SAMPLES] = {0};
   int sampleNum = 0;
+  uint32_t time = 0;
+  uint32_t prev_time = 0;
+  int8_t ms_cnt5 = 0;
+  int16_t ms_cnt250 = 0;
+  int16_t ms_cnt1000 = 0;
+
 
   // Reset of all peripherals, Initializes the Flash interface and the Systick.
   HAL_Init();
@@ -99,6 +105,7 @@ int main(void) {
   CanNode wheel_tach(WHEEL_TACH, countRTR);
   wheelCountNode = &wheel_tach;
 
+
   // ammount of time the previous wheel revolution took
   CanNode wheel_time(WHEEL_TIME, timeRTR);
   wheelTimeNode = &wheel_time;
@@ -111,10 +118,16 @@ int main(void) {
     // check if there is a message necessary for CanNode functionality
     CanNode::checkForMessages();
 
+    prev_time = time;
     // get the current time
-    uint32_t time = HAL_GetTick();
+    time = HAL_GetTick();
+    auto time_diff = time-prev_time;
+    time_diff = (time_diff <=0) ? 1 : time_diff;
+    ms_cnt5 += time_diff;
+    ms_cnt250 += time_diff;
+    ms_cnt1000 += time_diff;
 
-    if (time % 5 == 0){
+    if (ms_cnt5 >= 5){
       //Sting has a pitot tube and Urbie does not
       // local varibles
       uint32_t temp;
@@ -135,10 +148,11 @@ int main(void) {
       if (sampleNum >= NUM_SAMPLES) {
         sampleNum = 0;
       }
+      ms_cnt5 = 0;
     }
 
     // stuff to do every quarter second
-    if (time % 250 == 0) {
+    if (ms_cnt250 >= 250) {
 
       //average data
       long temp = 0;
@@ -153,12 +167,13 @@ int main(void) {
       wheelTimeNode->sendData_uint32((uint32_t) wheelTime);
       // We have sent the latest data, set to invalid data
       wheelTime = WHEEL_STOPPED;
+      ms_cnt250 = 0;
     }
 
 //USB Debugging
 #ifdef USBDEBUG
     // USB handling code (send data out USB port)
-    if (USBConnected && time % 499 == 0) {
+    if (USBConnected && ms_cnt250 >= 250) {
 
       // NOTE: the maximum buffer length is set in the
       // USB code to be 64 bytes.
@@ -178,15 +193,15 @@ int main(void) {
       itoa(pitotVoltage, buff1, 10);
       strcat(buff, buff1);
       // send a break between data sets
-      strcat(buff, "\n");
+      strcat(buff, "\f");
 
       CDC_Transmit_FS((uint8_t *)buff, strlen(buff));
-      
+      ms_cnt250=0; 
     }
 #endif
 
     // stuff to do every second
-    if (time % 1000 == 0) {
+    if (ms_cnt1000 >= 1000) {
       // send RPS data
       wheelCountNode->sendData_uint16(wheelCount);
 
@@ -195,13 +210,14 @@ int main(void) {
 
       // blink heartbeat LED
       HAL_GPIO_TogglePin(GPIOB, LED2_Pin);
+      ms_cnt1000 = 0;
     }
 
     if (time % 30000 == 0){
         //reset can every 30 seconds
-        can_init();
-        can_set_bitrate(CAN_BITRATE_500K);
-        can_enable();
+        //can_init();
+        //can_set_bitrate(CAN_BITRATE_500K);
+        //can_enable();
 
     }
 
