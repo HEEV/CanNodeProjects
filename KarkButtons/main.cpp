@@ -14,7 +14,7 @@
 #include <stm32f0xx_hal.h>
 
 // Uncomment next line to enable data via USB
-//#define USBDEBUG
+#define USBDEBUG
 
 #include <CanNode.h>
 
@@ -49,11 +49,11 @@ CanNode *hornNode;
 #define STOP_MAX_V 3600
 #define STOP_MIN_V 3200
 
-#define HORN_MAX_V 2700
-#define HORN_MIN_V 2500
+#define HORN_MAX_V 2750
+#define HORN_MIN_V 2550
 
-#define START_MAX_V 3000
-#define START_MIN_V 2750
+#define START_MAX_V 2600
+#define START_MIN_V 2300
 
 /// global flag (set in \ref Src/usb_cdc_if.c) for whether USB is connected
 volatile uint8_t USBConnected;
