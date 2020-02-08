@@ -77,7 +77,7 @@
 /* It's up to user to redefine and/or remove those define */
 #define APP_RX_DATA_SIZE  16
 #define APP_TX_DATA_SIZE  64
-#define BAUD_RATE 115200
+#define BAUD_RATE 345600
 /* USER CODE END PRIVATE_DEFINES */
 /**
   * @}
