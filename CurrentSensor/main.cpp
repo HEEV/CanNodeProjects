@@ -67,7 +67,7 @@ CAN_HandleTypeDef hcan;
 
 #define I_SEN_12A(adc) ( (adc * 103125)/7168 - 44196 )
 #define I_SEN_25A(adc) (  )
-#define I_SEN_6_5A(adc (  )
+#define I_SEN_6_5A(adc) (  )
 
 //Definitions of the voltage and current ADC inputs
 #define I_IN1_ADC 2
