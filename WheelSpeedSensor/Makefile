@@ -37,7 +37,7 @@ ODIR=obj
 
 C_DEFS := -DUSE_HAL_DRIVER -DSTM32F042x6
 
-FLAGS += -Os -Wall -g $(C_DEFS)
+FLAGS += -Os -Wall $(C_DEFS)
 FLAGS += --specs=nosys.specs -mthumb -mcpu=cortex-m0
 FLAGS += -TSTM32F042C6Tx_FLASH.ld -fdata-sections -ffunction-sections -Wl,--gc-sections
 CFLAGS = --std=gnu11  $(FLAGS)
