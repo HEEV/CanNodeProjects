@@ -1,6 +1,7 @@
 #ignore binary files
 *.elf
 *.bin
+*.hex
 *.o
 tags
 doc/*
