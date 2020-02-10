@@ -1,6 +1,6 @@
 # README #
 Code for Sting's wheel speed sensor and pitot tube for communication
-over CAN bus.
+over CAN bus. Most code is in main.cpp
 
 This code will transmit the time required for the last full wheel revolution (in mili-seconds) every 250ms. This can be used to find
 the speed of the vehicle (upadted every quarter-second). This data is
