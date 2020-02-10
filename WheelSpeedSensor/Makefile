@@ -88,7 +88,7 @@ StmCore: $(STM_OBJ)
 	$(AR) rcs $(LIB_DIR)/libStmCore.a $^
 
 clean:
-	rm -f *.o $(CAN_OBJ) $(STM_OBJ) $(SRC_OBJ) $(PROJ_NAME)*.elf $(PROJ_NAME)*.bin
+	rm -f *.o $(CAN_OBJ) $(STM_OBJ) $(SRC_OBJ) $(PROJ_NAME)*.elf $(PROJ_NAME)*.bin $(PROJ_NAME)*.bin
 
 size: 
 	arm-none-eabi-size $(PROJ_NAME)*.elf
@@ -105,6 +105,3 @@ flash: all
 
 stflash: main
 	st-flash write $(PROJ_NAME).bin 0x08000000
-
-docs:
-	doxygen Doxyfile
