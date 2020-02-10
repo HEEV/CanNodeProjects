@@ -53,8 +53,6 @@ CanNode *pitotNode;
 volatile uint8_t wheelCount;
 /// Varible for wheel revolution time, modified by a ISR
 volatile uint32_t wheelTime;
-/// Varible used to reset wheelTime if vehicle is stopped
-volatile uint32_t wheelStartTime;
 // Varible used to hold the pitot voltage in mv
 uint16_t pitotVoltage;
 
@@ -76,11 +74,13 @@ int main(void) {
   const int NUM_SAMPLES = 50;
   uint16_t pitotVoltages[NUM_SAMPLES] = {0};
   int sampleNum = 0;
+
+  // Time delay variables
   uint32_t time = 0;
   uint32_t prev_time = 0;
-  int8_t ms_cnt5 = 0;
-  int16_t ms_cnt250 = 0;
-  int16_t ms_cnt1000 = 0;
+  int8_t ms_cnt5 = 5;
+  int16_t ms_cnt250 = 250;
+  int16_t ms_cnt1000 = 1000;
 
 
   // Reset of all peripherals, Initializes the Flash interface and the Systick.
@@ -118,16 +118,24 @@ int main(void) {
     // check if there is a message necessary for CanNode functionality
     CanNode::checkForMessages();
 
-    prev_time = time;
-    // get the current time
-    time = HAL_GetTick();
-    auto time_diff = time-prev_time;
-    time_diff = (time_diff <=0) ? 1 : time_diff;
-    ms_cnt5 += time_diff;
-    ms_cnt250 += time_diff;
-    ms_cnt1000 += time_diff;
 
-    if (ms_cnt5 >= 5){
+    // Update the time
+    prev_time = time;
+    time = HAL_GetTick();
+    auto time_diff = time - prev_time;
+    time_diff = (time_diff <=0) ? 1 : time_diff;
+
+    // reset the counters
+    ms_cnt5 = (ms_cnt5 < 5) ? ms_cnt5 : 5;
+    ms_cnt250 = (ms_cnt250 < 250) ? ms_cnt250 : 250;
+    ms_cnt1000 = (ms_cnt1000 < 1000) ? ms_cnt1000 : 1000;
+
+    // Update counters
+    ms_cnt5 -= time_diff;
+    ms_cnt250 -= time_diff;
+    ms_cnt1000 -= time_diff;
+
+    if (ms_cnt5 <= 0){
       //Sting has a pitot tube and Urbie does not
       // local varibles
       uint32_t temp;
@@ -148,11 +156,10 @@ int main(void) {
       if (sampleNum >= NUM_SAMPLES) {
         sampleNum = 0;
       }
-      ms_cnt5 = 0;
     }
 
     // stuff to do every quarter second
-    if (ms_cnt250 >= 250) {
+    if (ms_cnt250 <= 0) {
 
       //average data
       long temp = 0;
@@ -167,13 +174,12 @@ int main(void) {
       wheelTimeNode->sendData_uint32((uint32_t) wheelTime);
       // We have sent the latest data, set to invalid data
       wheelTime = WHEEL_STOPPED;
-      ms_cnt250 = 0;
     }
 
 //USB Debugging
 #ifdef USBDEBUG
     // USB handling code (send data out USB port)
-    if (USBConnected && ms_cnt250 >= 250) {
+    if (USBConnected && ms_cnt250 <= 0) {
 
       // NOTE: the maximum buffer length is set in the
       // USB code to be 64 bytes.
@@ -196,12 +202,11 @@ int main(void) {
       strcat(buff, "\f");
 
       CDC_Transmit_FS((uint8_t *)buff, strlen(buff));
-      ms_cnt250=0; 
     }
 #endif
 
     // stuff to do every second
-    if (ms_cnt1000 >= 1000) {
+    if (ms_cnt1000 <= 0) {
       // send RPS data
       wheelCountNode->sendData_uint16(wheelCount);
 
@@ -210,19 +215,7 @@ int main(void) {
 
       // blink heartbeat LED
       HAL_GPIO_TogglePin(GPIOB, LED2_Pin);
-      ms_cnt1000 = 0;
     }
-
-    if (time % 30000 == 0){
-        //reset can every 30 seconds
-        //can_init();
-        //can_set_bitrate(CAN_BITRATE_500K);
-        //can_enable();
-
-    }
-
-    //make sure that the same code does not run twice
-    HAL_Delay(1);
   }
 }
 
@@ -256,8 +249,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
     return;
   }
   // set the new start time
-  startTime = wheelStartTime = newTime;
-
+  startTime = newTime;
   wheelTime = tempTime; // Valid pulse, save the value
   ++wheelCount;
 
